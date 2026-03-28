@@ -13,6 +13,11 @@ import json
 from tqdm import tqdm
 
 
+CALIBRATION_CACHE_FILE = "output/model_calibration.pkl"
+CALIBRATION_REPORT_FILE = "output/calibration_report.json"
+TEST_CACHE_FILE = "output/model_test.pkl"
+
+
 def _load_json_config(config_path: Path) -> dict:
     if not config_path.exists():
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
@@ -78,7 +83,7 @@ def analyze_calibration_data(cal_model):
         plt.ylabel("Sensor Data")
         plt.title("Sensor Data Over Time")
         plt.legend()
-        plt.savefig(f"sensor_{i}_data.png")
+        plt.savefig(f"output/sensor_{i}_data.png")
 
         plt.figure()
         plt.plot(sensor.timestamp, corr, label=f"Sensor {i} Correlation")
@@ -90,7 +95,7 @@ def analyze_calibration_data(cal_model):
         if len(toa) < 2:
             print(f"Warning: Sensor {i} has less than 2 detected peaks. Skipping pulse period analysis.")
             results[i] = {"num_samples": len(toa), "pulse_period_mean": None, "pulse_period_std": None}
-            plt.savefig(f"sensor_{i}_correlation.png")
+            plt.savefig(f"output/sensor_{i}_correlation.png")
             continue
         
         pulse_period = np.diff(toa)
@@ -101,11 +106,11 @@ def analyze_calibration_data(cal_model):
         for j, t in enumerate(toa):
             lbl = "Detected Peaks" if j == 0 else None
             plt.axvline(x=t, color='r', linestyle=':', linewidth=1, label=lbl)
-        plt.savefig(f"sensor_{i}_correlation.png")
+        plt.savefig(f"output/sensor_{i}_correlation.png")
 
     # convert dict to json serializable format
     results_serializable = {f"Sensor_{i}": {"pp_mean": res["pulse_period_mean"], "pp_std": res["pulse_period_std"], "num_samples": res["num_samples"]} for i, res in results.items()}
-    with open("calibration_report.json", "w") as f:
+    with open(CALIBRATION_REPORT_FILE, "w") as f:
         json.dump(results_serializable, f, indent=4)
 
     return results
@@ -113,9 +118,9 @@ def analyze_calibration_data(cal_model):
 
 
 def get_calibration_data(cache: bool):
-    if cache and Path("model_calibration.pkl").exists():
+    if cache and Path(CALIBRATION_CACHE_FILE).exists():
         print("calibration cached results...")
-        model_cal = pickle.load(open("model_calibration.pkl", "rb"))
+        model_cal = pickle.load(open(CALIBRATION_CACHE_FILE, "rb"))
     else:
         print("generating from calibration model...")
 
@@ -159,20 +164,21 @@ def get_calibration_data(cache: bool):
         print(f"Calibration completed with {n_samples} samples collected.")
 
         # Cache the calibration results
-        print(f"Caching calibration results to model_calibration.pkl...")
-        pickle.dump(model_cal, open("model_calibration.pkl", "wb"))
+        print(f"Caching calibration results to {CALIBRATION_CACHE_FILE}...")
+        pickle.dump(model_cal, open(CALIBRATION_CACHE_FILE, "wb"))
 
     return model_cal
 
 def run_test(cache: bool):
-    if cache and Path("model_calibration.pkl").exists():
-        print("Loading calibration from cache...")
-        model_test = pickle.load(open("model_test.pkl", "rb"))
-    else:
-        print("Calibration cache not found. Please run calibration first.")
-        return
-    print("Running test mode...")
-    # Here you can add code to run tests using the loaded calibration model
+    # if cache and Path(TEST_CACHE_FILE).exists():
+    #     print("Loading calibration from cache...")
+    #     model_test = pickle.load(open(TEST_CACHE_FILE, "rb"))
+    # else:
+    #     print("Calibration cache not found. Please run calibration first.")
+    #     return
+    # print("Running test mode...")
+    # # Here you can add code to run tests using the loaded calibration model
+    return
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sensor Fusion Simulation")
@@ -189,6 +195,10 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
+    # make output directory if doesn't exist
+    output_dir = Path("output")
+    output_dir.mkdir(exist_ok=True)
+
     if args.mode == "calibration":
         cal_data = get_calibration_data(args.cache)
         cal_results = analyze_calibration_data(cal_data)
@@ -197,6 +207,5 @@ if __name__ == "__main__":
     elif args.mode == "test":
         print("Running test mode...")
         # Load the calibration model
-        model_cal = pickle.load(open("model_calibration.pkl", "rb"))
 
         # Here you can add code to run tests using the loaded calibration model

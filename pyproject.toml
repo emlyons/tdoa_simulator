@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tdoa_simulator"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = ["numpy", "matplotlib", "scipy", "h5py"]
+
+[tool.setuptools]
+packages = ["simulator"]

@@ -1,0 +1,6 @@
+.venv
+.vscode
+*.pdf
+*.png
+*.egg-info
+output
