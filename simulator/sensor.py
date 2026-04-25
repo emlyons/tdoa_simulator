@@ -4,6 +4,11 @@ import matplotlib.pyplot as plt
 
 from .types import State, Point3D
 
+class Result:
+    def __init__(self, toa, loc: Point3D):
+        self.toa = toa
+        self.loc = loc
+
 class Channel:
     def __init__(self, gain, noise):
         self.gain = gain
@@ -22,6 +27,7 @@ class Sensor:
         self.channel = channel
         self.data = []
         self.timestamp = []
+        self.result = None
 
     def add_sample(self, time, sample):
         self.data.append(sample)

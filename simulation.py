@@ -1,11 +1,14 @@
 import numpy as np
 from scipy.io import loadmat
+from scipy.special import erf
 import h5py
 from pathlib import Path
 from matplotlib import pyplot as plt
 from simulator.model import ModelConfig, Model
-from simulator.sensor import Channel, Sensor
+from simulator.sensor import Channel, Sensor, Result
 from analysis import get_reference_signal, find_peaks
+from plotting import plot_cdf, plot_toa_distribution
+from localization import target_localization
 
 import pickle
 import argparse
@@ -74,47 +77,37 @@ def _build_sensor_array(cal_config: dict):
 
 def analyze_calibration_data(cal_model):
     results = {}
+    toa_data = {}
     for i, sensor in enumerate(cal_model.sensor_array):
         toa, corr, _ = find_peaks(sensor)
 
-        plt.figure()
-        plt.plot(sensor.timestamp, sensor.data, label=f"Sensor {i}")
-        plt.xlabel("Time (s)")
-        plt.ylabel("Sensor Data")
-        plt.title("Sensor Data Over Time")
-        plt.legend()
-        plt.savefig(f"output/sensor_{i}_data.png")
-
-        plt.figure()
-        plt.plot(sensor.timestamp, corr, label=f"Sensor {i} Correlation")
-        plt.xlabel("Time (s)")
-        plt.ylabel("Correlation")
-        plt.title("Sensor Correlation Over Time")
-        plt.legend()
-
         if len(toa) < 2:
-            print(f"Warning: Sensor {i} has less than 2 detected peaks. Skipping pulse period analysis.")
-            results[i] = {"num_samples": len(toa), "pulse_period_mean": None, "pulse_period_std": None}
-            plt.savefig(f"output/sensor_{i}_correlation.png")
             continue
         
         pulse_period = np.diff(toa)
         pp_mean = np.mean(pulse_period)
         pp_std = np.std(pulse_period)
-        results[i] = {"num_samples": len(toa), "pulse_period_mean": pp_mean, "pulse_period_std": pp_std}
+        sensor.result = Result(toa=toa, loc=sensor.state.loc)
 
-        for j, t in enumerate(toa):
-            lbl = "Detected Peaks" if j == 0 else None
-            plt.axvline(x=t, color='r', linestyle=':', linewidth=1, label=lbl)
-        plt.savefig(f"output/sensor_{i}_correlation.png")
+        plot_toa_distribution(toa, f"output/sensor_{i}_toa_distribution.png")
+        plot_cdf(pulse_period, i, pp_std, file_name=f"output/sensor_{i}_pulse_period_cdf.png")
+
+    target_loc, target_timestamps = target_localization(cal_model.sensor_array)
 
     # convert dict to json serializable format
-    results_serializable = {f"Sensor_{i}": {"pp_mean": res["pulse_period_mean"], "pp_std": res["pulse_period_std"], "num_samples": res["num_samples"]} for i, res in results.items()}
+    results_serializable = {f"Sensor_{i}": {"pp_mean": np.diff(sensor.result.toa).mean(),
+                                            "pp_std": np.diff(sensor.result.toa).std(),
+                                            "num_samples": len(sensor.result.toa),
+                                            "toa": sensor.result.toa,
+                                            "x": sensor.result.loc.x,
+                                            "y": sensor.result.loc.y,
+                                            "z": sensor.result.loc.z} for i, sensor in enumerate(cal_model.sensor_array)}
+    results_serializable["target_location"] = [{"x": loc.x, "y": loc.y, "z": loc.z, "timestamp": ts} for loc, ts in zip(target_loc, target_timestamps)]
+
     with open(CALIBRATION_REPORT_FILE, "w") as f:
         json.dump(results_serializable, f, indent=4)
 
     return results
-
 
 
 def get_calibration_data(cache: bool):

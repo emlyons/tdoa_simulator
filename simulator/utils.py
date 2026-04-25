@@ -2,7 +2,11 @@ import math
 import numpy as np
 from .types import State, Point3D
 
-def time_correction(sensor, source_state, time, time_receive, c):
+CHIRP_FREQ_MIN = 10
+CHIRP_FREQ_MAX = 100
+SPEED_OF_SOUND = 343.0  # m/s
+
+def time_correction(sensor, source_state, time, time_receive, c=SPEED_OF_SOUND):
 
     dvec, dist = sensor.state.distance_to(source_state)
 
@@ -11,7 +15,7 @@ def time_correction(sensor, source_state, time, time_receive, c):
     time_correction = -f/df
     return time + time_correction
 
-def get_doppler_factor(state_source, state_receiver, speed_in_medium):
+def get_doppler_factor(state_source, state_receiver, speed_in_medium=SPEED_OF_SOUND):
     s_vel = state_source.vel.to_array()
     s_loc = state_source.loc.to_array()
     r_vel = state_receiver.vel.to_array()
@@ -36,8 +40,8 @@ def get_envelope(T, t, doppler, sigma=0.4):
     return Wn
 
 def make_chirp(start_time, duration, sample_time, doppler=1.0):
-    f_min = 10*doppler
-    f_max = 100*doppler
+    f_min = CHIRP_FREQ_MIN*doppler
+    f_max = CHIRP_FREQ_MAX*doppler
     t = (sample_time - start_time) # apply doppler shift
     Amplitude = 20.0 * get_envelope(duration, t, doppler)
     Thalf = duration/2
@@ -63,13 +67,6 @@ def signal(time, epoch, interval, duration, doppler_factor):
     last_emit = epoch + pulse_number * interval
     sample = make_chirp(last_emit, duration, time, doppler_factor)
     return sample
-
-def distance(x0, y0, z0, x1, y1, z1):
-    dx = x0 - x1
-    dy = y0 - y1
-    dz = z0 - z1
-    dist = math.sqrt(dx*dx + dy*dy + dz*dz)
-    return dx, dy, dz, dist
 
 def get_pulse_number(time, epoch, interval):
     return np.floor(((time - epoch) / interval))

@@ -1,6 +1,6 @@
 import numpy as np
 
-from .utils import distance, get_pulse_number, signal, time_correction, get_doppler_factor
+from .utils import get_pulse_number, signal, time_correction, get_doppler_factor
 from .target import Target
 
 class ModelConfig:
