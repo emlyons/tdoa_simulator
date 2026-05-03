@@ -4,3 +4,5 @@
 *.png
 *.egg-info
 output
+__pycache__
+.ipynb_checkpoints
