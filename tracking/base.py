@@ -239,4 +239,48 @@ class ParticleFilterBase:
 
     def measurement_likelyhood(self, measurement):
         raise NotImplementedError("measurement_likelyhood must be implemented by subclass")
+
+class MargenalizedParticleFilterBase:
+    def __init__(self, particles):
+        self.particles = particles
+        self.weights = np.ones(len(self.particles)) / len(self.particles)
+        
+    def update(self, measurement, dt):
+
+        # 1. KF predict linear state for each particle
+        self.process_model_linear(dt)
+
+        # 2. Propagate particles through process model
+        self.particles = self.process_model_non_linear(dt) # x_i_k+1 = f(x_i_k) <- process model
+
+        # 3. KF update for each particle
+        # self.linear_update(measurement)
+
+        # 4. Weight update based on marginal likelihood
+        self.weights = self.measurement_likelyhood_non_linear(measurement) * self.weights # W_i_k+1 = P(measurement | particle_i) * W_i_k <- measurement model
+        
+        # 5. normalize weights
+        self.weights /= np.sum(self.weights) # normalize updated weights
+
+        # 3. estimate
+        loc_est = self.weights @ self.particles[:, 0:2] # estimate x_est = sum(W_i_k+1 * x_i_k) <- state estimation
+
+        # 6. resample if necessary
+        indices = np.random.choice(len(self.particles), len(self.particles), p=self.weights)
+        self.particles = self.particles[indices] # x_i_k resample particles based on weights
+        self.weights = np.ones(len(self.particles)) / len(self.particles) # reset weights after resampling
+
+        return loc_est
+
+    def process_model_linear(self, dt):
+        raise NotImplementedError("process_model_linear must be implemented by subclass")
+
+    def process_model_non_linear(self, dt):
+        raise NotImplementedError("process_model_non_linear must be implemented by subclass")
+    
+    def linear_update(self, measurement):
+        raise NotImplementedError("linear_update must be implemented by subclass")
+
+    def measurement_likelyhood_non_linear(self, measurement):
+        raise NotImplementedError("measurement_likelyhood_non_linear must be implemented by subclass")
     

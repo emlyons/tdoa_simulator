@@ -1,35 +1,35 @@
 {
     "target_x": 0.0,
     "target_y": 0.0,
-    "duration": 10,
+    "duration": 600,
     "sampling_rate": 1000,
     "sensors": [
         {
             "id": 1,
             "x": 4.0,
             "y": 4.0,
-            "noise": 0.1,
+            "noise": 0.1223,
             "threshold": 1.0
         },
         {
             "id": 2,
-            "x": 4.0,
-            "y": -4.0,
-            "noise": 0.1,
+            "x": -4.0,
+            "y": 4.0,
+            "noise": 0.0984,
             "threshold": 1.0
         },
         {
             "id": 3,
-            "x": -4.0,
-            "y": 4.0,
-            "noise": 0.1,
+            "x": 4.0,
+            "y": -4.0,
+            "noise": 0.1412,
             "threshold": 1.0
         },
         {
             "id": 4,
             "x": -4.0,
             "y": -4.0,
-            "noise": 0.1,
+            "noise": 0.1653,
             "threshold": 1.0
         }
     ]
