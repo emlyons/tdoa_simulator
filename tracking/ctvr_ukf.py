@@ -4,11 +4,14 @@ from .base import UKFBase
 # Coordinated Turn with Velocity and Rate (CTVR) UKF
 # constant linear and angular velocity
 class CTVR_UKF(UKFBase):
-    def __init__(self, state):
-        P = np.eye(5) * 1e-2  # State covariance matrix
-        Q = np.eye(5) * 1e-2  # Process noise covariance
-        R = np.eye(2) * 0.5  # Measurement noise covariance
-        super().__init__(state, P, Q, R, alpha=1e-3, beta=-20, kappa=0)
+    def __init__(self, state, P=None, Q=None, R=None, alpha=1e-3, beta=2, kappa=0):
+        if P is None:
+            P = np.eye(5) * 1e-2  # State covariance matrix
+        if Q is None:
+            Q = np.eye(5) * 1e-2  # Process noise covariance
+        if R is None:
+            R = np.eye(2) * 0.5  # Measurement noise covariance
+        super().__init__(state, P, Q, R, alpha=alpha, beta=beta, kappa=kappa)
 
 
     def process_model(self, state_aug, dt):

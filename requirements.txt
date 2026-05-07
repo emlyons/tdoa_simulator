@@ -3,5 +3,6 @@ matplotlib
 scipy
 h5py
 pathlib
+pandas
 tqdm
 -e .

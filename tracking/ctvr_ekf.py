@@ -4,10 +4,13 @@ from .base import EKFBase
 # Coordinated Turn with Velocity and Rate (CTVR) EKF
 # constant linear and angular velocity
 class CTVR_EKF(EKFBase):
-    def __init__(self, state):
-        P = np.eye(5) * 1e-2  # State covariance matrix
-        Q = np.eye(5) * 1e-2  # Process noise covariance
-        R = np.eye(2) * 0.5  # Measurement noise covariance
+    def __init__(self, state, P=None, Q=None, R=None):
+        if P is None:
+            P = np.eye(5) * 1e-2  # State covariance matrix
+        if Q is None:
+            Q = np.eye(5) * 1e-2  # Process noise covariance
+        if R is None:
+            R = np.eye(2) * 0.5  # Measurement noise covariance
         I = np.eye(5)
         super().__init__(state, P, Q, R, I)
 

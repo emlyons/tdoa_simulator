@@ -9,6 +9,9 @@ from simulator.sensor import Channel, Sensor, Result
 from analysis import get_reference_signal, find_peaks
 from plotting import plot_cdf, plot_toa_distribution
 from localization import target_localization
+from tracking.ctvr_ekf import CTVR_EKF
+from tracking.ctvr_ukf import CTVR_UKF
+from tracking.singer_ekf import SINGER_EKF
 
 import pickle
 import argparse
@@ -18,7 +21,8 @@ from tqdm import tqdm
 
 CALIBRATION_CACHE_FILE = "output/model_calibration.pkl"
 CALIBRATION_REPORT_FILE = "output/calibration_report.json"
-TEST_CACHE_FILE = "output/model_test.pkl"
+SIMULATION_CACHE_FILE = "output/model_simulation.pkl"
+SIMULATION_REPORT_FILE = "output/simulation_report.json"
 
 
 def _load_json_config(config_path: Path) -> dict:
@@ -75,44 +79,9 @@ def _build_sensor_array(cal_config: dict):
         "or a non-empty 'sensor_positions' list."
     )
 
-def analyze_calibration_data(cal_model):
-    results = {}
-    toa_data = {}
-    for i, sensor in enumerate(cal_model.sensor_array):
-        toa, corr, _ = find_peaks(sensor)
-
-        if len(toa) < 2:
-            continue
-        
-        pulse_period = np.diff(toa)
-        pp_mean = np.mean(pulse_period)
-        pp_std = np.std(pulse_period)
-        sensor.result = Result(toa=toa, loc=sensor.state.loc)
-
-        plot_toa_distribution(toa, f"output/sensor_{i}_toa_distribution.png")
-        plot_cdf(pulse_period, i, pp_std, file_name=f"output/sensor_{i}_pulse_period_cdf.png")
-
-    target_loc, target_timestamps = target_localization(cal_model.sensor_array)
-
-    # convert dict to json serializable format
-    results_serializable = {f"Sensor_{i}": {"pp_mean": np.diff(sensor.result.toa).mean(),
-                                            "pp_std": np.diff(sensor.result.toa).std(),
-                                            "num_samples": len(sensor.result.toa),
-                                            "toa": sensor.result.toa,
-                                            "x": sensor.result.loc.x,
-                                            "y": sensor.result.loc.y,
-                                            "z": sensor.result.loc.z} for i, sensor in enumerate(cal_model.sensor_array)}
-    results_serializable["target_location"] = [{"x": loc.x, "y": loc.y, "z": loc.z, "timestamp": ts} for loc, ts in zip(target_loc, target_timestamps)]
-
-    with open(CALIBRATION_REPORT_FILE, "w") as f:
-        json.dump(results_serializable, f, indent=4)
-
-    return results
-
-
 def get_calibration_data(cache: bool):
     if cache and Path(CALIBRATION_CACHE_FILE).exists():
-        print("calibration cached results...")
+        print("loading calibration data from cache...")
         model_cal = pickle.load(open(CALIBRATION_CACHE_FILE, "rb"))
     else:
         print("generating from calibration model...")
@@ -121,19 +90,14 @@ def get_calibration_data(cache: bool):
         try:
             cal_config = _load_json_config(config_path)
         except Exception:
-            fallback_path = Path("./config/test_config.json")
-            if fallback_path.exists():
-                print("Primary calibration config invalid/empty. Falling back to ./config/test_config.json")
-                cal_config = _load_json_config(fallback_path)
-            else:
-                raise
+            raise Exception(f"Failed to load calibration config from {config_path}. Please ensure the file exists and contains valid JSON.")
 
         microphone_array = _build_sensor_array(cal_config)
 
         target_x = float(cal_config.get("target_x", 0.0))
         target_y = float(cal_config.get("target_y", 0.0))
         duration_s = float(cal_config.get("duration", 10.0))
-        sampling_rate = float(cal_config.get("sampling_rate", 10000.0))
+        sampling_rate = float(cal_config.get("sampling_rate", 1000.0))
 
         # Static target trajectory for calibration: [time, y, x]
         t = np.arange(0.0, duration_s, 1.0 / sampling_rate)
@@ -162,24 +126,168 @@ def get_calibration_data(cache: bool):
 
     return model_cal
 
-def run_test(cache: bool):
-    # if cache and Path(TEST_CACHE_FILE).exists():
-    #     print("Loading calibration from cache...")
-    #     model_test = pickle.load(open(TEST_CACHE_FILE, "rb"))
-    # else:
-    #     print("Calibration cache not found. Please run calibration first.")
-    #     return
-    # print("Running test mode...")
-    # # Here you can add code to run tests using the loaded calibration model
-    return
+
+def analyze_calibration_data(model: Model):
+    results = {}
+    toa_data = {}
+    for i, sensor in enumerate(model.sensor_array):
+        toa, corr, _ = find_peaks(sensor)
+
+        if len(toa) < 2:
+            continue
+        
+        pulse_period = np.diff(toa)
+        pp_mean = np.mean(pulse_period)
+        pp_std = np.std(pulse_period)
+        sensor.result = Result(toa=toa, loc=sensor.state.loc)
+
+        plot_toa_distribution(toa, f"output/sensor_{i}_toa_distribution.png")
+        plot_cdf(pulse_period, i, pp_std, file_name=f"output/sensor_{i}_pulse_period_cdf.png")
+
+    target_loc, target_timestamps = target_localization(model.sensor_array)
+
+    # convert dict to json serializable format
+    results_serializable = {f"Sensor_{i}": {"pp_mean": np.diff(sensor.result.toa).mean(),
+                                            "pp_std": np.diff(sensor.result.toa).std(),
+                                            "num_samples": len(sensor.result.toa),
+                                            "toa": sensor.result.toa,
+                                            "x": sensor.result.loc.x,
+                                            "y": sensor.result.loc.y,
+                                            "z": sensor.result.loc.z} for i, sensor in enumerate(model.sensor_array)}
+    results_serializable["target_location"] = [{"x": loc.x, "y": loc.y, "z": loc.z, "timestamp": ts} for loc, ts in zip(target_loc, target_timestamps)]
+
+    with open(CALIBRATION_REPORT_FILE, "w") as f:
+        json.dump(results_serializable, f, indent=4)
+
+    return results
+
+def get_simulation_data(cache: bool):
+    if cache and Path(SIMULATION_CACHE_FILE).exists():
+        print("loading simulation data from cache...")
+        model = pickle.load(open(SIMULATION_CACHE_FILE, "rb"))
+    else:
+        print("running simulation model...")
+
+        config_path = Path("./config/simulation_config.json")
+        try:
+            simulation_config = _load_json_config(config_path)
+        except Exception:
+            raise Exception(f"Failed to load simulation config from {config_path}. Please ensure the file exists and contains valid JSON.")
+
+        microphone_array = _build_sensor_array(simulation_config)
+
+        sampling_rate = float(simulation_config.get("sampling_rate", 1000.0))
+
+        positions = pickle.load(open('./data/position.pkl', 'rb'))
+
+        # Create model configuration and model
+        model_config = ModelConfig(positions=positions, sampling_rate=sampling_rate)
+        model = Model(model_config, microphone_array)
+
+        # Run the simulation for calibration
+        n_samples = 0
+        total_steps = int((model.end_time - model.clock) * sampling_rate)
+        for _ in tqdm(range(total_steps), desc="Simulating", unit="sample"):
+            model.tick()
+            model.sample()
+            n_samples += 1
+
+        print(f"Simulation completed with {n_samples} samples collected.")
+
+        # Cache the simulation results
+        print(f"Caching simulation results to {SIMULATION_CACHE_FILE}...")
+        pickle.dump(model, open(SIMULATION_CACHE_FILE, "wb"))
+    return model
+
+def analyze_simulation_data(model: Model):
+    results = {}
+    toa_data = {}
+    for i, sensor in enumerate(model.sensor_array):
+        toa, corr, _ = find_peaks(sensor)
+
+        if len(toa) < 2:
+            continue
+        
+        pulse_period = np.diff(toa)
+        pp_mean = np.mean(pulse_period)
+        pp_std = np.std(pulse_period)
+        sensor.result = Result(toa=toa, loc=sensor.state.loc)
+
+        plot_toa_distribution(toa, f"output/sensor_{i}_toa_distribution.png")
+        plot_cdf(pulse_period, i, pp_std, file_name=f"output/sensor_{i}_pulse_period_cdf.png")
+
+    target_loc, target_timestamps = target_localization(model.sensor_array)
+
+    # CTVR EKF tracking of target location
+    loc_ekf = []
+    #                      x               y             v   Hdg  dHdg
+    state = np.array([target_loc[0].x, target_loc[0].y, 0.0, 0.0, 0.0])
+    ekf = CTVR_EKF(state, P=np.eye(5)*0.5, Q=np.eye(5)*0.03, R=np.eye(2) * 0.2)
+    for i in range(len(target_loc)):
+        measurement = np.array([target_loc[i].x, target_loc[i].y])
+        dt = target_timestamps[i] - target_timestamps[i-1]
+        ekf.predict(dt)
+        ekf.update(measurement)
+        state = ekf.get_state()
+        loc_ekf.append((state[0], state[1]))
+
+    # CTVR UKF tracking of target location
+    loc_ukf = []
+    #                      x               y             v   Hdg  dHdg
+    state = np.array([target_loc[0].x, target_loc[0].y, 0.0, 0.0, 0.0])
+    ukf = CTVR_UKF(state, P=np.eye(5)*0.5, Q=np.eye(5)*0.03, R=np.eye(2) * 0.2,
+                   alpha=1e-3, beta=2, kappa=0)
+    for i in range(len(target_loc)):
+        measurement = np.array([target_loc[i].x, target_loc[i].y])
+        dt = target_timestamps[i] - target_timestamps[i-1]
+        ukf.predict(dt)
+        ukf.update(measurement)
+        state = ukf.get_state()
+        loc_ukf.append((state[0], state[1]))
+
+    # Singer EKF tracking of target location
+    # TODO: Measurement is TDOAs
+    # loc_singer_ekf = []
+    # #                      x           vx   ax        y           vy   ay
+    # state = np.array([target_loc[0].x, 0.0, 0.0, target_loc[0].y, 0.0, 0.0])
+    # singer_ekf = SINGER_EKF(state, P=np.eye(6)*0.5, Q=np.eye(6)*0.03, R=np.eye(3) * 0.2, tau=0.5)
+    # for i in range(len(target_loc)):
+    #     measurement = np.array([[target_loc[i].x, target_loc[i].y]]).T
+    #     dt = target_timestamps[i] - target_timestamps[i-1]
+    #     singer_ekf.predict(dt)
+    #     singer_ekf.update(measurement)
+    #     state = singer_ekf.get_state()
+    #     loc_singer_ekf.append((state[0], state[3]))
+
+
+    true_locations = pickle.load(open('./data/position.pkl', 'rb'))
+
+    # convert dict to json serializable format
+    results_serializable = {f"Sensor_{i}": {"pp_mean": np.diff(sensor.result.toa).mean(),
+                                            "pp_std": np.diff(sensor.result.toa).std(),
+                                            "num_samples": len(sensor.result.toa),
+                                            "toa": sensor.result.toa,
+                                            "x": sensor.result.loc.x,
+                                            "y": sensor.result.loc.y,
+                                            "z": sensor.result.loc.z} for i, sensor in enumerate(model.sensor_array)}
+    results_serializable["target_location"] = [{"x": loc[2], "y": loc[1], "timestamp": loc[0]} for loc in true_locations]
+    results_serializable["target_location_measured"] = [{"x": loc.x, "y": loc.y, "z": loc.z, "timestamp": ts} for loc, ts in zip(target_loc, target_timestamps)]
+    results_serializable["target_location_ekf"] = [{"x": loc[0], "y": loc[1], "timestamp": ts} for loc, ts in zip(loc_ekf, target_timestamps)]
+    results_serializable["target_location_ukf"] = [{"x": loc[0], "y": loc[1], "timestamp": ts} for loc, ts in zip(loc_ukf, target_timestamps)]
+    results_serializable["target_location_singer_ekf"] = [{"x": loc[0], "y": loc[1], "timestamp": ts} for loc, ts in zip(loc_singer_ekf, target_timestamps)]
+
+    with open(SIMULATION_REPORT_FILE, "w") as f:
+        json.dump(results_serializable, f, indent=4)
+
+    return results
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sensor Fusion Simulation")
     parser.add_argument(
         "--mode",
-        choices=["calibration", "test"],
+        choices=["calibration", "simulation"],
         required=True,
-        help="Mode to run the simulation: 'calibration' or 'test'"
+        help="Mode to run the simulation: 'calibration' or 'simulation'"
     )
     parser.add_argument(
         "--cache",
@@ -197,8 +305,15 @@ if __name__ == "__main__":
         cal_results = analyze_calibration_data(cal_data)
         ## generate calibration results report
 
-    elif args.mode == "test":
-        print("Running test mode...")
-        # Load the calibration model
+    elif args.mode == "simulation":
+        simulation_data = get_simulation_data(args.cache)
+        simulation_results = analyze_simulation_data(simulation_data)
+        print(f'length: {len(simulation_data.sensor_array[0].data)}')
+        plt.plot(simulation_data.sensor_array[0].timestamp, simulation_data.sensor_array[0].data)
+        plt.plot(simulation_data.sensor_array[1].timestamp, simulation_data.sensor_array[1].data)
+        plt.plot(simulation_data.sensor_array[2].timestamp, simulation_data.sensor_array[2].data)
+        plt.plot(simulation_data.sensor_array[3].timestamp, simulation_data.sensor_array[3].data)
+        plt.xlabel("Time (s)")
+        plt.ylabel("Amplitude")
+        plt.savefig("output/simulation_signal.png")
 
-        # Here you can add code to run tests using the loaded calibration model

@@ -104,7 +104,7 @@ class EKF2Base(KalmanBase):
 
 
 class UKFBase(KalmanBase):
-    def __init__(self, state, P, Q, R, alpha=1e3, beta=2, kappa=0):
+    def __init__(self, state, P, Q, R, alpha=1e-3, beta=2, kappa=0):
         self.alpha = alpha
         self.beta = beta
         self.kappa = kappa
@@ -134,6 +134,7 @@ class UKFBase(KalmanBase):
 
         self.state = state_aug[:self.state.shape[0]]
         self.P = cov_aug[:self.P.shape[0], :self.P.shape[1]]
+        self.P = (self.P + self.P.T) / 2  # enforce symmetry
         return
 
     def update(self, measurement):
@@ -163,8 +164,10 @@ class UKFBase(KalmanBase):
         for (y, wc) in zip(Y, Wc):
             P_yy += wc * np.outer(y - Y_est, y - Y_est)
 
-        self.state += (P_xy @ np.linalg.inv(P_yy) @ (measurement - Y_est))
-        self.P -= (P_xy @ np.linalg.inv(P_yy) @ P_xy.T)
+        K = P_xy @ np.linalg.inv(P_yy)
+        self.state += K @ (measurement - Y_est)
+        self.P -= K @ P_yy @ K.T
+        self.P = (self.P + self.P.T) / 2  # enforce symmetry
         return
 
     def _lambda(self, n):
@@ -176,7 +179,14 @@ class UKFBase(KalmanBase):
         Wm = np.zeros((2 * n + 1))
         Wc = np.zeros((2 * n + 1))
         l = self._lambda(n)
-        L = np.linalg.cholesky(cov_aug)
+        # nearPD fallback: if Cholesky fails, clamp negative eigenvalues
+        try:
+            L = np.linalg.cholesky(cov_aug)
+        except np.linalg.LinAlgError:
+            eigvals, eigvecs = np.linalg.eigh(cov_aug)
+            eigvals = np.maximum(eigvals, 1e-10)
+            cov_aug = eigvecs @ np.diag(eigvals) @ eigvecs.T
+            L = np.linalg.cholesky(cov_aug)
 
         X[0] = state_aug
         Wm[0] = l / (n + l)

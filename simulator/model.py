@@ -11,8 +11,8 @@ class ModelConfig:
         self.emission_duration = 0.1 # 100ms
         self.emission_rate = 0.5 # 2hz
         self.speed_of_sound = 343 # Speed of sound in air in m/s
-        self.speed_of_sound_error = 0.5 # chirp-level sigma in m/s
-        self.clock_error = 1e-4 # 100us
+        self.speed_of_sound_error = 10 # chirp-level sigma in m/s
+        self.clock_error = 3e-4 # 100us
 
 class Model:
     def __init__(self, config, sensor_array):
@@ -33,7 +33,7 @@ class Model:
         pulse_number = int(get_pulse_number(self.clock, self.config.epoch, self.config.emission_rate))
 
         # Treat environmental sound speed variation as a chirp-level effect
-        c_eff = self.config.speed_of_sound # self._get_speed_of_sound_with_error(pulse_number + 173)
+        c_eff = self._get_speed_of_sound_with_error(pulse_number + 173)
 
         for s_id, sensor in enumerate(self.sensor_array):# at sample
 

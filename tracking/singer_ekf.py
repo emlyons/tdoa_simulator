@@ -4,10 +4,10 @@ from .base import EKFBase
 # Coordinated Turn with Velocity and Rate (CTVR) EKF
 # constant linear and angular velocity
 class SINGER_EKF(EKFBase):
-    def __init__(self, state, R, tau):
+    def __init__(self, state, P, Q, R, tau):
         P = np.eye(6) * 1e-2  # State covariance matrix
         Q = np.eye(6) * 1e-2  # Process noise covariance
-        # R = np.eye(3) * 0.5  # Measurement noise covariance
+        R = np.eye(3) * 0.5  # Measurement noise covariance
         I = np.eye(6)
         self.tau = tau
         super().__init__(state, P, Q, R, I)

@@ -43,7 +43,7 @@ def make_chirp(start_time, duration, sample_time, doppler=1.0):
     f_min = CHIRP_FREQ_MIN*doppler
     f_max = CHIRP_FREQ_MAX*doppler
     t = (sample_time - start_time) # apply doppler shift
-    Amplitude = 20.0 * get_envelope(duration, t, doppler)
+    Amplitude = 10000.0 * get_envelope(duration, t, doppler)
     Thalf = duration/2
     CR = (f_max - f_min)/Thalf
 
@@ -58,7 +58,6 @@ def make_chirp(start_time, duration, sample_time, doppler=1.0):
         phase_offset = f_min*Thalf + 0.5*CR*Thalf**2
         phase = 2*np.pi*(phase_offset + f_max*tau - 0.5*CR*tau**2)
     signal = Amplitude * np.sin(phase)
-
     return signal
 
 def signal(time, epoch, interval, duration, doppler_factor):
