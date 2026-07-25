@@ -21,7 +21,7 @@ class KalmanBase:
         raise NotImplementedError("update must be implemented by subclass")
 
     def get_state(self):
-        return self.state
+        return self.state.squeeze()
 
 class EKFBase(KalmanBase):
     def __init__(self, state, P, Q, R, I):

@@ -216,7 +216,7 @@ def analyze_simulation_data(model: Model):
         plot_toa_distribution(toa, f"output/sensor_{i}_toa_distribution.png")
         plot_cdf(pulse_period, i, pp_std, file_name=f"output/sensor_{i}_pulse_period_cdf.png")
 
-    target_loc, target_timestamps = target_localization(model.sensor_array)
+    target_loc, target_timestamps, t_doa = target_localization(model.sensor_array)
 
     # CTVR EKF tracking of target location
     loc_ekf = []
@@ -225,7 +225,7 @@ def analyze_simulation_data(model: Model):
     ekf = CTVR_EKF(state, P=np.eye(5)*0.5, Q=np.eye(5)*0.03, R=np.eye(2) * 0.2)
     for i in range(len(target_loc)):
         measurement = np.array([target_loc[i].x, target_loc[i].y])
-        dt = target_timestamps[i] - target_timestamps[i-1]
+        dt = target_timestamps[i] - target_timestamps[i-1] if i > 0 else target_timestamps[i]
         ekf.predict(dt)
         ekf.update(measurement)
         state = ekf.get_state()
@@ -235,11 +235,11 @@ def analyze_simulation_data(model: Model):
     loc_ukf = []
     #                      x               y             v   Hdg  dHdg
     state = np.array([target_loc[0].x, target_loc[0].y, 0.0, 0.0, 0.0])
-    ukf = CTVR_UKF(state, P=np.eye(5)*0.5, Q=np.eye(5)*0.03, R=np.eye(2) * 0.2,
+    ukf = CTVR_UKF(state, P=np.eye(5)*1e-7, Q=np.eye(5)*0.03, R=np.eye(2) * 0.2,
                    alpha=1e-3, beta=2, kappa=0)
     for i in range(len(target_loc)):
         measurement = np.array([target_loc[i].x, target_loc[i].y])
-        dt = target_timestamps[i] - target_timestamps[i-1]
+        dt = target_timestamps[i] - target_timestamps[i-1] if i > 0 else target_timestamps[i]
         ukf.predict(dt)
         ukf.update(measurement)
         state = ukf.get_state()
@@ -247,17 +247,22 @@ def analyze_simulation_data(model: Model):
 
     # Singer EKF tracking of target location
     # TODO: Measurement is TDOAs
-    # loc_singer_ekf = []
-    # #                      x           vx   ax        y           vy   ay
-    # state = np.array([target_loc[0].x, 0.0, 0.0, target_loc[0].y, 0.0, 0.0])
-    # singer_ekf = SINGER_EKF(state, P=np.eye(6)*0.5, Q=np.eye(6)*0.03, R=np.eye(3) * 0.2, tau=0.5)
-    # for i in range(len(target_loc)):
-    #     measurement = np.array([[target_loc[i].x, target_loc[i].y]]).T
-    #     dt = target_timestamps[i] - target_timestamps[i-1]
-    #     singer_ekf.predict(dt)
-    #     singer_ekf.update(measurement)
-    #     state = singer_ekf.get_state()
-    #     loc_singer_ekf.append((state[0], state[3]))
+    loc_singer_ekf = []
+    #                      x           vx   ax        y           vy   ay
+    state = np.array([[target_loc[0].x, 0.0, 0.0, target_loc[0].y, 0.0, 0.0]]).T
+    sensors = np.array([[sensor.result.loc.x, sensor.result.loc.y] for sensor in model.sensor_array])
+    R = np.array([[9.23547846e-07, 4.58823783e-07, 4.58823783e-07],
+       [4.58823783e-07, 9.11192738e-07, 4.58823783e-07],
+       [4.58823783e-07, 4.58823783e-07, 9.09800478e-07]]) # from calibration
+    singer_ekf = SINGER_EKF(state, P=np.eye(6)*1e-7, Q=np.eye(6)*0.01, R=R, tau=0.1, S=sensors, c=343)
+
+    for i in range(len(target_loc)):
+        measurement = np.array([[t_doa[i][0], t_doa[i][1], t_doa[i][2]]]).T
+        dt = target_timestamps[i] - target_timestamps[i-1] if i > 0 else target_timestamps[i]
+        singer_ekf.predict(dt)
+        singer_ekf.update(measurement)
+        state = singer_ekf.get_state()
+        loc_singer_ekf.append((state[0], state[3]))
 
 
     true_locations = pickle.load(open('./data/position.pkl', 'rb'))
@@ -273,11 +278,11 @@ def analyze_simulation_data(model: Model):
     results_serializable["target_location"] = [{"x": loc[2], "y": loc[1], "timestamp": loc[0]} for loc in true_locations]
     results_serializable["target_location_measured"] = [{"x": loc.x, "y": loc.y, "z": loc.z, "timestamp": ts} for loc, ts in zip(target_loc, target_timestamps)]
     results_serializable["target_location_ekf"] = [{"x": loc[0], "y": loc[1], "timestamp": ts} for loc, ts in zip(loc_ekf, target_timestamps)]
-    results_serializable["target_location_ukf"] = [{"x": loc[0], "y": loc[1], "timestamp": ts} for loc, ts in zip(loc_ukf, target_timestamps)]
-    results_serializable["target_location_singer_ekf"] = [{"x": loc[0], "y": loc[1], "timestamp": ts} for loc, ts in zip(loc_singer_ekf, target_timestamps)]
+    results_serializable["target_location_ukf"] = [{"x": loc[0], "y": loc[1], "timestamp": ts} for loc, ts in zip(loc_ukf, target_timestamps)] 
+    results_serializable["target_location_singer_ekf"] = [{"x": loc[0].squeeze(), "y": loc[1].squeeze(), "timestamp": ts} for loc, ts in zip(loc_singer_ekf, target_timestamps)]
 
     with open(SIMULATION_REPORT_FILE, "w") as f:
-        json.dump(results_serializable, f, indent=4)
+       json.dump(results_serializable, f, indent=4)
 
     return results
 

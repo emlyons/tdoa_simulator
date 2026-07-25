@@ -15,6 +15,7 @@ def target_localization(sensor_array):
     # iterate through TOA index in all sensors
     positions = []
     timestamps = []
+    tdoa = []
     source_loc = np.array([0.0, 0.0])
 
     sigma = np.array([toa_std(sensor.result.toa) for sensor in sensor_array])
@@ -28,8 +29,7 @@ def target_localization(sensor_array):
         # ignore z-dimension for localization.
         sensor_loc = np.array([sensor.state.loc.to_array()[:2] for sensor in sensor_array])
         
-        # TODO: this should also return the emission time
-        source_loc, t_emission = tdoa_model_solution_nls_gauss_newton(time_of_arrival,
+        source_loc, t_emission, t_doa = tdoa_model_solution_nls_gauss_newton(time_of_arrival,
                                                                       sensor_loc,
                                                                       SPEED_OF_SOUND,
                                                                       sigma)
@@ -38,8 +38,9 @@ def target_localization(sensor_array):
 
         positions.append(Point3D(source_loc[0], source_loc[1], 0.0))
         timestamps.append(t_emission)
+        tdoa.append(t_doa)
 
-    return np.array(positions), np.array(timestamps)
+    return np.array(positions), np.array(timestamps), np.array(tdoa)
 
 # TDOA model
 # tdoa_i = (1/c) * (sqrt((x_s-x_i)^2 + (y_s-y_i)^2) - sqrt((x_s-x_ref)^2 + (y_s-y_ref)^2)) + noise_i 
@@ -64,7 +65,7 @@ def tdoa_model_solution_nls_gauss_newton(t_i, loc_rx, c, sigma, num_iter=4):
     # take inverse var weighted average of t_emissions
     t_e = t_i - (1/c) * np.linalg.norm(loc_src_est - loc_rx, axis=1)
     t_emission = np.dot(t_e, 1/sigma**2) / np.sum(1/sigma**2)
-    return loc_src_est, t_emission
+    return loc_src_est, t_emission, t_true
 
 def tdoa_model(loc_rx, loc_src, c):
     ref_t = (1/c) * np.linalg.norm(loc_src - loc_rx[0], axis=0)
